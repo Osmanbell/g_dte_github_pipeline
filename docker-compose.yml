@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: perconalab/pg_dte:latest
+    container_name: pg_dte_test
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: secretpass
+      PGDTE_KEY_PATH: /etc/postgres/encryption.key
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./env/encryption.key:/etc/postgres/encryption.key:ro
+    ports:
+      - "5432:5432"

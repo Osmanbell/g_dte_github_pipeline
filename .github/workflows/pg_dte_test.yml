@@ -1,0 +1,65 @@
+name: Test pg_dte with Azure Key Vault
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test_pg_dte:
+    runs-on: ubuntu-latest
+
+    env:
+      KEYVAULT_NAME: ${{ secrets.KEYVAULT_NAME }}
+      KEY_NAME: ${{ secrets.KEY_NAME }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Install Azure CLI KeyVault Extension
+      run: |
+        az extension add --name keyvault
+
+    - name: Fetch Key from Azure Key Vault
+      run: |
+        mkdir -p env
+        az keyvault secret download           --vault-name $KEYVAULT_NAME           --name $KEY_NAME           --file ./env/encryption.key           --encoding base64
+
+    - name: Launch PostgreSQL with pg_dte
+      run: docker-compose up -d
+
+    - name: Wait for PostgreSQL to be ready
+      run: |
+        for i in {1..10}; do
+          docker exec pg_dte_test pg_isready && break
+          sleep 5
+        done
+
+    - name: Run basic SQL test
+      run: |
+        chmod +x scripts/test_db.sh
+        ./scripts/test_db.sh
+
+    - name: Backup DB
+      run: |
+        docker exec pg_dte_test pg_dumpall -U postgres > full_backup.sql
+
+    - name: Key Rotation
+      run: |
+        chmod +x scripts/rotate_key.sh
+        ./scripts/rotate_key.sh
+
+    - name: Fetch New Key
+      run: |
+        az keyvault secret download           --vault-name $KEYVAULT_NAME           --name $KEY_NAME           --file ./env/encryption.key           --encoding base64
+        docker restart pg_dte_test
+
+    - name: Teardown
+      if: always()
+      run: docker-compose down -v
